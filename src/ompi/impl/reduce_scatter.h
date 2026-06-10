@@ -70,18 +70,23 @@ class ReduceScatterImpl<BackendType::kOmpi, device_type> {
     if (op == ReductionOpType::kAvg) {
       float scale = 1.0f / static_cast<float>(world_size);
 
-      DispatchFunc<kDev, AllTypes>(data_type, [&](auto dtype) {
-        using T = typename decltype(dtype)::type;
+      // Exclude `kFloat16`/`kBFloat16`: MPI cannot reduce them (`MPI_BYTE`
+      // mapping), so they never reach this dispatch, while instantiating it
+      // for the CUDA host types (`__half`/`__nv_bfloat16`) breaks host
+      // compilation on toolchains without host-side operators.
+      DispatchFunc<kDev, ConcatType<AllIntTypes, FloatTypes>>(
+          data_type, [&](auto dtype) {
+            using T = typename decltype(dtype)::type;
 
-        T *typed_buf = static_cast<T *>(host_recvbuf);
+            T *typed_buf = static_cast<T *>(host_recvbuf);
 
-        // Simply do the averaging on the CPU before the H2D copy.
-        for (size_t i = 0; i < recv_count; ++i) {
-          // TODO(lzm): should later use the unified `Cast` function instead of
-          // static_cast to support CPU custom types.
-          typed_buf[i] *= static_cast<T>(scale);
-        }
-      });
+            // Simply do the averaging on the CPU before the H2D copy.
+            for (size_t i = 0; i < recv_count; ++i) {
+              // TODO(lzm): should later use the unified `Cast` function instead
+              // of static_cast to support CPU custom types.
+              typed_buf[i] *= static_cast<T>(scale);
+            }
+          });
     }
 
     CHECK_STATUS(Rt, Rt::Memcpy(recv_buff, host_recvbuf, recv_bytes,
