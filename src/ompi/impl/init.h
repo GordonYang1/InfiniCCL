@@ -30,7 +30,10 @@ class InitImpl<BackendType::kOmpi, device_type> {
   }
 
  private:
-  constexpr static auto required_level_ = MPI_THREAD_FUNNELED;
+  // `MPI_THREAD_SERIALIZED` (rather than `MPI_THREAD_FUNNELED`) is required
+  // because host frameworks such as InfiniLM initialize MPI on the main
+  // thread but issue collective operations from per-rank worker threads.
+  constexpr static auto required_level_ = MPI_THREAD_SERIALIZED;
 };
 
 template <>
